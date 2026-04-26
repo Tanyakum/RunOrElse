@@ -52,4 +52,217 @@
   .track-art img { width: 100%; height: 100%; object-fit: cover; }
   .track-info { flex: 1; min-width: 0; }
   .track-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-artist { font-s
+  .track-artist { font-size: 12px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-playing { font-size: 12px; font-weight: 500; color: #1D9E75; }
+  .track-paused { font-size: 12px; font-weight: 500; color: #D85A30; }
+  .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+  .stat-card { background: #f7f7f5; border-radius: 12px; padding: 0.875rem 1rem; }
+  .stat-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 500; }
+  .stat-unit { font-size: 12px; color: #888; margin-left: 2px; }
+  .sensitivity-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+  .sensitivity-row label { font-size: 13px; color: #888; white-space: nowrap; }
+  .sensitivity-row input { flex: 1; }
+  .sensitivity-row span { font-size: 13px; min-width: 20px; text-align: right; }
+  .start-btn {
+    width: 100%; padding: 15px;
+    background: #111; color: #fff;
+    border: none; border-radius: 50px;
+    font-size: 15px; font-weight: 500; cursor: pointer;
+  }
+  .start-btn.active { background: #f7f7f5; color: #111; border: 0.5px solid #ddd; }
+  #err-msg { font-size: 13px; color: #D85A30; text-align: center; display: none; }
+</style>
+</head>
+<body>
+
+<div id="screen-auth" style="display:flex; flex-direction:column; align-items:center; gap:1.5rem; width:100%; max-width:360px;">
+  <p class="wordmark">RunOrElse</p>
+  <p class="headline">Music stops<br>when you do.</p>
+  <p class="sub">Connect Spotify. Start running. Stop slacking.</p>
+  <button class="spotify-btn" onclick="connectSpotify()">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+    Connect Spotify
+  </button>
+  <p class="note">Requires Spotify Premium. This app controls your active Spotify playback.</p>
+</div>
+
+<div id="screen-app">
+  <p class="wordmark">RunOrElse</p>
+  <div class="state-ring" id="stateRing">
+    <div class="state-icon" id="stateIcon">▶</div>
+    <div class="state-label" id="stateLabel">Ready</div>
+  </div>
+  <div class="now-playing">
+    <div class="track-art" id="trackArt"></div>
+    <div class="track-info">
+      <div class="track-name" id="trackName">Not playing</div>
+      <div class="track-artist" id="trackArtist">Open Spotify and play something</div>
+    </div>
+    <div id="trackState"></div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Time running</div>
+      <div class="stat-value" id="statTime">0<span class="stat-unit">s</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pauses</div>
+      <div class="stat-value" id="statPauses">0</div>
+    </div>
+  </div>
+  <div class="sensitivity-row">
+    <label>Sensitivity</label>
+    <input type="range" id="slider" min="1" max="5" step="1" value="3" oninput="sensitivity=parseInt(this.value);document.getElementById('sensVal').textContent=this.value">
+    <span id="sensVal">3</span>
+  </div>
+  <button class="start-btn" id="startBtn" onclick="toggleTracking()">Start tracking</button>
+  <p id="err-msg">Motion permission denied. Allow it in Settings and reload.</p>
+</div>
+
+<script>
+var CLIENT_ID = '52a412eadb11446bac6e0f4bbcf42bb0';
+var REDIRECT_URI = 'https://tanyakum.github.io/RunOrElse/';
+var SCOPES = 'user-read-playback-state user-modify-playback-state';
+var token = null;
+var isTracking = false;
+var isRunning = false;
+var stopTimer = null;
+var pauseCount = 0;
+var runSecs = 0;
+var runInterval = null;
+var sensitivity = 3;
+var THRESHOLDS = [2, 4, 7, 11, 16];
+var STOP_DELAY = 2000;
+
+function connectSpotify() {
+  var url = 'https://accounts.spotify.com/authorize?client_id=' + CLIENT_ID +
+    '&response_type=token&redirect_uri=' + encodeURIComponent(REDIRECT_URI) +
+    '&scope=' + encodeURIComponent(SCOPES);
+  window.location.href = url;
+}
+
+function parseToken() {
+  var hash = window.location.hash.substring(1);
+  var params = {};
+  hash.split('&').forEach(function(p) { var kv = p.split('='); params[kv[0]] = kv[1]; });
+  if (params.access_token) {
+    token = params.access_token;
+    history.replaceState(null, '', window.location.pathname);
+    return true;
+  }
+  return false;
+}
+
+function showApp() {
+  document.getElementById('screen-auth').style.display = 'none';
+  document.getElementById('screen-app').style.display = 'flex';
+  pollTrack();
+  setInterval(pollTrack, 5000);
+}
+
+function spotifyFetch(url, method, cb) {
+  var xhr = new XMLHttpRequest();
+  xhr.open(method || 'GET', 'https://api.spotify.com/v1' + url);
+  xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+  xhr.onload = function() { if (cb) cb(xhr); };
+  xhr.send();
+}
+
+function pollTrack() {
+  spotifyFetch('/me/player', 'GET', function(xhr) {
+    if (xhr.status !== 200) return;
+    var d = JSON.parse(xhr.responseText);
+    if (!d.item) return;
+    document.getElementById('trackName').textContent = d.item.name;
+    document.getElementById('trackArtist').textContent = d.item.artists.map(function(a){return a.name;}).join(', ');
+    var imgs = d.item.album && d.item.album.images;
+    if (imgs && imgs.length) document.getElementById('trackArt').innerHTML = '<img src="'+imgs[0].url+'" alt="">';
+    var s = document.getElementById('trackState');
+    s.textContent = d.is_playing ? 'playing' : 'paused';
+    s.className = d.is_playing ? 'track-playing' : 'track-paused';
+  });
+}
+
+function spotifyPlay() { spotifyFetch('/me/player/play', 'PUT', null); }
+function spotifyPause() { spotifyFetch('/me/player/pause', 'PUT', null); }
+
+function onMotion(e) {
+  var acc = e.accelerationIncludingGravity || e.acceleration || {};
+  var mag = Math.sqrt((acc.x||0)*(acc.x||0) + (acc.y||0)*(acc.y||0) + (acc.z||0)*(acc.z||0));
+  var threshold = THRESHOLDS[sensitivity - 1];
+  if (mag > threshold) {
+    clearTimeout(stopTimer);
+    if (!isRunning) { isRunning = true; setRunState(true); spotifyPlay(); }
+    stopTimer = setTimeout(onStop, STOP_DELAY);
+  }
+}
+
+function onStop() {
+  if (!isRunning) return;
+  isRunning = false;
+  pauseCount++;
+  document.getElementById('statPauses').textContent = pauseCount;
+  setRunState(false);
+  spotifyPause();
+}
+
+function setRunState(running) {
+  var ring = document.getElementById('stateRing');
+  ring.className = 'state-ring ' + (running ? 'running' : 'stopped');
+  document.getElementById('stateIcon').textContent = running ? '▶' : '⏸';
+  document.getElementById('stateLabel').textContent = running ? 'Running' : 'Stopped';
+}
+
+function toggleTracking() {
+  if (!isTracking) { requestAndStart(); } else { stopTracking(); }
+}
+
+function requestAndStart() {
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission().then(function(p) {
+      if (p === 'granted') { startTracking(); }
+      else { document.getElementById('err-msg').style.display = 'block'; }
+    }).catch(function() { document.getElementById('err-msg').style.display = 'block'; });
+  } else {
+    startTracking();
+  }
+}
+
+function startTracking() {
+  window.addEventListener('devicemotion', onMotion);
+  isTracking = true; isRunning = false; pauseCount = 0; runSecs = 0;
+  document.getElementById('statPauses').textContent = '0';
+  document.getElementById('statTime').innerHTML = '0<span class="stat-unit">s</span>';
+  document.getElementById('stateRing').className = 'state-ring stopped';
+  document.getElementById('stateLabel').textContent = 'Move to start';
+  document.getElementById('stateIcon').textContent = '⏸';
+  document.getElementById('startBtn').textContent = 'Stop tracking';
+  document.getElementById('startBtn').className = 'start-btn active';
+  runInterval = setInterval(function() {
+    if (isRunning) {
+      runSecs++;
+      var m = Math.floor(runSecs / 60), s = runSecs % 60;
+      document.getElementById('statTime').innerHTML = m > 0
+        ? m + '<span class="stat-unit">m</span> ' + s + '<span class="stat-unit">s</span>'
+        : s + '<span class="stat-unit">s</span>';
+    }
+  }, 1000);
+}
+
+function stopTracking() {
+  window.removeEventListener('devicemotion', onMotion);
+  isTracking = false; isRunning = false;
+  clearTimeout(stopTimer); clearInterval(runInterval);
+  document.getElementById('stateRing').className = 'state-ring';
+  document.getElementById('stateIcon').textContent = '▶';
+  document.getElementById('stateLabel').textContent = 'Ready';
+  document.getElementById('startBtn').textContent = 'Start tracking';
+  document.getElementById('startBtn').className = 'start-btn';
+  spotifyPause();
+}
+
+if (parseToken()) { showApp(); }
+</script>
+</body>
+</html>
